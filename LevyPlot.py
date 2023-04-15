@@ -2,54 +2,78 @@
 # coding: utf-8
 
 # In[148]:
+"""
+Python module for reading, processing and plotting Levylab tdms files
+"""
 
+"""
+Prerequisite Packages:
 
-# import os
-# import shutil
-# import re
-# import math
-# import numpy as np
-# import pandas as pd
+import os
+import shutil
+import re
+import math
+import numpy as np
+import pandas as pd
 
-# import seaborn as sns
-# import plotly.io as pio
-# import plotly.graph_objects as go
-# pio.renderers.default = "notebook"
-# import matplotlib
-# import matplotlib.pyplot as plt
-# %matplotlib inline
-# font = {'family' : 'Arial',
-#         'size'   : 14}
-# matplotlib.rc('font', **font)
-# matplotlib.rcParams['axes.linewidth'] = 0.8
-# matplotlib.rcParams["figure.dpi"] = 600
+import seaborn as sns
+import plotly.io as pio
+import plotly.graph_objects as go
+pio.renderers.default = "notebook"
+import matplotlib
+import matplotlib.pyplot as plt
+%matplotlib inline
+font = {'family' : 'Arial',
+        'size'   : 14}
+matplotlib.rc('font', **font)
+matplotlib.rcParams['axes.linewidth'] = 0.8
+matplotlib.rcParams["figure.dpi"] = 600
 
-# from scipy import signal
-# from scipy.optimize import curve_fit
-# from scipy import polyfit
-# import random
+from scipy import signal
+from scipy.optimize import curve_fit
+from scipy import polyfit
+import random
 
-# import json
-# from nptdms import TdmsWriter, RootObject, GroupObject, ChannelObject, TdmsFile
-# from tqdm import tqdm
-# from datetime import datetime
-# import pickle
-# from sklearn.cluster import KMeans
+import json
+from nptdms import TdmsWriter, RootObject, GroupObject, ChannelObject, TdmsFile
+from tqdm import tqdm
+from datetime import datetime
+import pickle
+from sklearn.cluster import KMeans
+"""
 
 
 # In[159]:
 
 
 class Scan2D():
-    def __init__(self, folder = '03-Sweep B IV',                 metadata = dict(scantype = 'IV', groupsize = 1, monodirection = 'monotonic',                 convertfilename = False, convertparam = dict(start = 0, step = 1),                 dataofinterest = ['Magnet', 'Temperature', 'AO1', 'AI2', 'AI3', 'AI4'],                 outersweepchannel = 'Magnet', innersweepchannel = 'AO1',                 source = 'AO1', sourceamp = 0.001, Vplus = 'AI4', Vminus = 'AI3', Iminus = 'AI2')):
+    def __init__(self, folder = '03-Sweep B IV',\
+                 metadata = dict(scantype = 'IV', groupsize = 1, monodirection = 'monotonic',\
+                                 convertfilename = False, convertparam = dict(start = 0, step = 1),\
+                                 dataofinterest = ['Magnet', 'Temperature', 'AO1', 'AI2', 'AI3', 'AI4'],\
+                                 outersweepchannel = 'Magnet', innersweepchannel = 'AO1',\
+                                 source = 'AO1', sourceamp = 0.001, Vplus = 'AI4', Vminus = 'AI3', Iminus = 'AI2')):
         """
         initiate a 2D sweep or 1D sweep class
+
+        self.folder = exprimental folder the tdms files are located
         self.metadata['scantype'] = 'IV' or 'Conductance'
         self.metadata['groupsize'] = how many curves taken at the same condition to be averaged
         self.metadata['monodirection'] = 'monoup' 'monodown' 'increasefrom0' 'decreaseto0'
+        self.metadata['convertfilename'] = True or False, convert tdms file index to sweep index, in case the sweep index is not saved
+        self.metadata['dataofinterest'] = list of channel names you are interested in
+        self.metadata['outersweepchannel'] = outer sweep channel (you can choose "datapoint" if your sweep is 1D)
+        self.metadata['innersweepchannel'] = inner sweep channel
+        self.metadata['source' ... 'Iminus'] = device measurement config,
+        note:
+        for conductance measurements, use 'X1' ... 'X8' as channel names
+        for IV measurements, use 'AI1' ... 'AI8' as channel names
         """
+
         self.folder = './' + folder
+        # set the folder which contains the tdms files of one experiment run
         self.filelist = [self.folder + '/' + f for f in os.listdir(self.folder) if f.endswith('.tdms')]
+        # create a list of files which end with '.tdms'
         self.filelist = sorted(self.filelist)
         
         self.metadata = metadata
@@ -59,6 +83,7 @@ class Scan2D():
         self.metadata['pivottablevalue'] = ''
         self.metadata['dzdx_columnstep'] = 0
         self.metadata['dzdy_rowstep'] = 0
+        # set metadata
         
 #         self.metadata['scantype'] = scantype
 #         self.metadata['groupsize'] = groupsize
@@ -81,25 +106,35 @@ class Scan2D():
         self.pivottabledX = pd.DataFrame({})
         self.pivottabledY = pd.DataFrame({})
         self.pivottabledXdY = pd.DataFrame({})
+        # initiate data
         
         self.__maskinitialized = False
         self.__positivemask = None
         self.__negativemask = None
         self.__increasemask = None
         self.__decreasemask = None
+        # initiate mask
         
        
     def saveToPickles(self, appendix = ''):
+        """
+        save processed data to .pkl files
+        appendix: comments about this save
+        this function will also save the parameters for data processing in metadata.txt, such as differential & filtering
+        """
         now = datetime.now()
         output_path = self.folder + '/Jupyter Output' + appendix + ' ' + now.strftime('%Y-%m-%d %H %M')
         os.mkdir(output_path)
+        # create folder. folder name = 'Jupyter Output' + your comment + datetime
         
         with open(output_path + '/metadata.txt', 'w') as f:
             json.dump(self.metadata, f)
+        # write metadata to txt file
         
         if len(self.outerindexlist) > 0:
             with open(output_path + '/outerindex.pkl', 'wb') as f:
                 pickle.dump(self.outerindexlist, f)
+        # write outer sweep channel values to .pkl file
         
         if not self.monodfconcatenated.empty:
             self.monodfconcatenated.to_pickle(output_path + '/monodfconcatenated.pkl')
@@ -115,16 +150,23 @@ class Scan2D():
             
         if not self.pivottabledXdY.empty:
             self.pivottabledXdY.to_pickle(output_path + '/pivottabledXdY.pkl')
+        # write Pandas dataframes to .pkl files
             
     
     def loadFromPickles(self, jupyteroutputfolder = 'Jupyter Output'):
-        latest_folder = max([self.folder + '/' + f for f in os.listdir(self.folder) if f.startswith(jupyteroutputfolder)],                            key=os.path.getmtime)
+        """
+        load previously saved data
+        """
+        latest_folder = max([self.folder + '/' + f for f in os.listdir(self.folder) if f.startswith(jupyteroutputfolder)],\
+                            key=os.path.getmtime)
         path = latest_folder
+        # find the path of previously saved data that starts with jupyteroutputfolder: str
+        # if multiple folders satisfy the criteria, read from the latest one
         
         with open(path + '/metadata.txt', "r") as read_file:
-            metadata = json.load(read_file)
-        
+            metadata = json.load(read_file)        
         self.metadata = metadata
+        # read metadata
         
         if 'monodfconcatenated.pkl' in os.listdir(path):
             self.monodfconcatenated = pd.read_pickle(path + '/monodfconcatenated.pkl')
@@ -140,50 +182,79 @@ class Scan2D():
             
         if 'pivottabledXdY.pkl' in os.listdir(path):
             self.pivottabledXdY = pd.read_pickle(path + '/pivottabledXdY.pkl')
+        # read .pkl files to Pandas dataframes
             
         if 'outerindex.pkl' in os.listdir(path):
             with open(path + '/outerindex.pkl', 'rb') as f:
                 outerindexlist = pickle.load(f)
                 self.outerindexlist = outerindexlist
         else:
-            self.outerindexlist = self.monodfconcatenated.index.unique()
-            
+            self.outerindexlist = self.monodfconcatenated.index.unique()  
+        # read outer sweep channel values
 #         self.openTdms()
         
     
     def openTdms(self):
+        """
+        use the TdmsFile package to open the tdms file
+        if the experiment contains multiple tdms files, concatenate them into a single tdms file
+        """
         if len(self.filelist) == 1:
             self.tdmsfile = TdmsFile(self.filelist[0])
+        # if there is a single tdms file for this experiment, open it
         else:
+            # if this experiment has multiple tdms files
             filepath = self.folder + '/' + 'concatenated.tdms'
             self.concatenateTdms(filepath)
             self.tdmsfile = TdmsFile(filepath)
+            # concatenate all tdms files into one file
+            # open the concatenated tdms
             
             archive_path = self.folder + '/' + 'archive separate tdms'
             if not os.path.isdir(archive_path):
                 os.mkdir(archive_path)
             for filename in self.filelist:
                 shutil.move(filename, archive_path)
+            # move the individual tdms files into a folder called "archived"
             self.filelist = [self.folder + '/' + 'concatenated.tdms']
+            # leave only the concatenated tdms, update Scan2D.filelist
             
     
     def concatenateTdms(self, filepath):
+        """
+        concatenate multiple tdms files into one file
+        create a new tdms file, and then dump all data into this file
+        """
         group_counter = 0
+        # record in total how many groups have we copied
         
         with TdmsWriter(filepath) as concatenated_file:
+            # create a new tdms file specified by filepath, to dump all the data
             for filename in tqdm(self.filelist):
+                # iterate individual tdms files
                 with TdmsFile.open(filename) as tdms_file:
+                    # iterate all groups in each tdms file
                     groups = tdms_file.groups()
                     for group in groups:
                         new_group_name = 'Group{:06d}'.format(group_counter)
-                        new_group_object = GroupObject(new_group_name,                                                       properties = group.properties)
+                        # name the new group according to the group counter
+                        new_group_object = GroupObject(new_group_name, properties = group.properties)
+                        # create new group object
                         for channel in group.channels():
-                            new_channel_object = ChannelObject(new_group_name, channel.name, channel[:],                                                               properties = channel.properties)
+                            # iterate all channels in each group
+                            new_channel_object = ChannelObject(new_group_name, channel.name, channel[:],\
+                                                               properties = channel.properties)
+                            # create new channel object
                             concatenated_file.write_segment([new_group_object] + [new_channel_object])
+                            # copy group + channel into the new file
                         group_counter += 1
-                        
+
         
     def printChannelInfo(self):
+        """
+        print out what channels have been recorded in the experiment
+        help you determine Scan2D.metadata['dataofinterest']
+        """
         groups = self.tdmsfile.groups()
         
         if len(groups) == 0:
@@ -197,52 +268,88 @@ class Scan2D():
             
     
     def tdmsToAveragedMonoDfConcatenated(self):
+        """
+        convert the tdms file to a Pandas dataframe, which is indexed by the outer sweep channel
+        Note:
+        averaged means: when you take multiple curves at the same condition, they are averaged to get one curve
+        mono means: filter out the "monotonic" part of data, for example if you had a triangle shaped sourcing 
+        when taking IV curves, this function can keep the monotonic part
+        df means: Pandas dataframe
+        concatenated means: all data in this experiment are converted into a single dataframe
+        """
         groups = self.tdmsfile.groups()
         
         index_count = len(groups) // self.metadata['groupsize']
+        # index_count = how many curves are there after averaging by groupsize
         
         for i in tqdm(range(index_count)):
             groups_with_same_index = groups[self.metadata['groupsize'] * i: self.metadata['groupsize'] * (i + 1)]
+            # groups_with_same_index = these data groups are taken at the same condition, and they need to be averaged
             averaged_mono_df_single = self.tdmsToAveragedMonoDfSingle(groups_with_same_index)
+            # averaged_mono_df_single = a single dataframe converted from these data groups
+            # it averages these groups, and monotonic part is extracted
             if i == 0:
                 mono_df_concatenated = averaged_mono_df_single
+            # if this is the first curve, copy it to mono_df_concatenated
             else:
                 mono_df_concatenated = mono_df_concatenated.append(averaged_mono_df_single)
+            # if not, append it to the existing mono_df_concatenated
         
         self.monodfconcatenated = mono_df_concatenated.set_index(self.metadata['outersweepchannel'])
+        # set index of mono_df_concatenated to be outer sweep channel
         self.outerindexlist = self.monodfconcatenated.index.unique()
+        # extract the values of outer sweep channel
         
         
     def tdmsToAveragedMonoDfSingle(self, group_list):
+        """
+        from tdmsfile, read multiple data groups in group_list, convert them to dataframes
+        then average the dataframes to get a single dataframe
+        then extract the monotonic part of this dataframe
+        """
         df_list = [self.tdmsToDfSingle(group) for group in group_list]
+        # df_list is a list of dataframes. each dataframe is read from one group
         
         numpy_array_list = [df.to_numpy() for df in df_list]
         averaged_numpy_array = sum(numpy_array_list) / len(df_list)
+        # average the values of dataframes in df_list. get one numpy 2d array
         
         averaged_df = pd.DataFrame(averaged_numpy_array, columns = df_list[0].columns)
+        # create a new dataframe from the averaged numpy 2d array
         
-        if self.metadata['monodirection'] is not 'all':
+        if self.metadata['monodirection'] != 'all':
             return self.extractMonotonicPart(averaged_df)
         return averaged_df
+        # extract the monotonic part
             
         
     def __calcV2TV4T(self, df):
+        """
+        calculate V2T and V4T from Vplus and Vminus
+        """
         if self.metadata['scantype'] == 'IV':
             df['V2T'] = df[self.metadata['source']]
+        # for IV measurement, the source AO is the V2T
         if self.metadata['scantype'] == 'Conductance':
             df['V2T'] = self.metadata['sourceamp']
+        # for lockin conductance measurement, the source amplitude is the V2T
         
         if bool(self.metadata['Vplus']) and bool(self.metadata['Vminus']) and self.metadata['Vplus'] != self.metadata['Vminus']:
             df['V4T'] = df[self.metadata['Vplus']] - df[self.metadata['Vminus']]
+        # if we have both Vplus and Vminus and they are different, V4T = Vplus - Vminus
         elif bool(self.metadata['Vplus']):
             df['V4T'] = df[self.metadata['Vplus']]
+        # if Vplus and Vminus the same, differential mode, V4T = Vplus
         elif bool(self.metadata['Vminus']):
             df['V4T'] = df[self.metadata['source']] - df[self.metadata['Vminus']]
         else:
             df['V4T'] = df['V2T']
             
     
-    def __calcGRforGVsgScan(self, df):    
+    def __calcGRforGVsgScan(self, df):
+        """
+        calculate R and G for lockin conductance measurement, from V4T, V2T and Iminus
+        """  
         df['R2T'] = df['V2T'] / df[self.metadata['Iminus']]
         df['G2T'] = 1/ df['R2T']
         df['R4T'] = df['V4T'] / df[self.metadata['Iminus']]
@@ -250,78 +357,118 @@ class Scan2D():
         
         
     def __iniMask(self, df_single):
+        """
+        create boolean mask for dataframe, to extract certain part of the data
+        """
         self.__positivemask = df_single[self.metadata['innersweepchannel']] > 0
+        # mask for positive inner sweep channel values
         self.__negativemask = df_single[self.metadata['innersweepchannel']] < 0
+        # mask for negative inner sweep channel values
         self.__increasemask = df_single[self.metadata['innersweepchannel']].diff() > 0
+        # mask for increasing inner sweep channel values
         self.__decreasemask = df_single[self.metadata['innersweepchannel']].diff() < 0
+        # mask for decreasing inner sweep channel values
         self.__maskinitialized = True
         
     
     def extractMonotonicPart(self, df_single):
+        """
+        extract the monotonic part of a single dataframe, always gives an ascending output
+        Note:
+        this function has a triangular or ramping inner sweep channel in mind
+        this function probably can not deal with more complicated sweep shape
+        """
         if not self.__maskinitialized:
             self.__iniMask(df_single)
+        # initiate boolean mask
         
         if self.metadata['monodirection'] == 'monoup':
             df_monoup = df_single[self.__increasemask & self.__negativemask]
             return df_monoup.append(df_single[self.__increasemask & self.__positivemask])
+        # 'monoup' means increasing portion
+        # 'monoup' = <0,increase + >0,increase
      
         elif self.metadata['monodirection'] == 'monodown':
             df_monodown = df_single[self.__decreasemask & self.__positivemask]
             df_monodown = df_monodown.append(df_single[self.__decreasemask & self.__negativemask])
             return df_monodown.iloc[::-1]
-        
+        # 'monodown' means decreasing portion
+        # 'monodown' = revert(>0,decrease + <0,decrease)
+
         elif self.metadata['monodirection'] == 'increasefrom0':
             df_increasefrom0 = df_single[self.__decreasemask & self.__negativemask]
             df_increasefrom0 = df_increasefrom0.iloc[::-1]
             return df_increasefrom0.append(df_single[self.__increasemask & self.__positivemask])
+        # 'increasefrom0' means ramping away from 0
+        # 'increasefrom0' = revert(<0,decrease) + >0,increase
         
         elif self.metadata['monodirection'] =='decreaseto0':
             df_decreaseto0 = df_single[self.__increasemask & self.__negativemask]
             return df_decreaseto0.append(df_single[self.__decreasemask & self.__positivemask].iloc[::-1])
+        # 'decreaseto0' means ramping down to 0
+        # 'decreaseto0' = <0,increase + revert(>0,decrease)
             
         else:
             return df_single
     
         
     def tdmsToDfSingle(self, group):
+        """
+        read data from a single group in the tdms file, convert it to a Pandas dataframe
+        """
         if self.metadata['scantype'] == 'IV':
             num_of_points = group['AI1'].data.size
         elif self.metadata['scantype'] == 'Conductance':
             num_of_points = group['X1'].data.size
+        # get the total number of datapoints of this curve
         
         df=pd.DataFrame({'datapoint':np.arange(num_of_points)})
+        # the datapoint column stores the numeric index
         
         for column in self.metadata['dataofinterest']:
+            # iterate the channels in this group
             if column in ['V2T', 'V4T', 'G4T', 'R4T', 'G2T', 'R2T']:
                 df[column] = np.zeros(num_of_points)
+            # will calculate V2T, V4T, etc later 
                 
             data = group[column].data
+            # read data from this channel
             
             if len(data) == num_of_points:
                 df[column] = data
             elif column == self.metadata['outersweepchannel']:
-                outerindex = data[0] + 1e-10 * random.random()
+                outerindex = data[0] + 1e-12 * random.random()
+                # this small random component is to deal with the possible recurrent outer sweep channel values
+                # for example the magnetic field does not change between two IV curves
+                # during later processing these two IV curves will have the same index, and cause problem
                 df[column] = [outerindex for _ in range(num_of_points)]
             else:
                 df[column] = [data[0] for _ in range(num_of_points)]
+                # sometimes there is a single value in a channel, we need to duplicate it to match the dataframe size
         
         if self.metadata['convertfilename']:
             self.convertFilenameToIndex(group.name, df)
+            # convert group index to outer sweep channel value if outer sweep channel is not recorded
         
         self.__calcV2TV4T(df)
+        # calculate V2T and V4T, add them to dataframe columns
         if self.metadata['scantype'] == 'Conductance':
             self.__calcGRforGVsgScan(df)
-        
+        # for lockin measurements, calculate conductance and resistance, add them to dataframe columns
         return df
     
 
     def convertFilenameToIndex(self, groupname, df_single):
+        """
+        convert a groupname to a outer sweep channel index
+        """
         # find all numbers in the string using re.findall()
         numbers = re.findall(r'\d+', groupname)
         # join the numbers into one substring
         numeric_substring = ''.join(numbers)
         # return the numeric substring
-        outerindex = (int(numeric_substring) // self.metadata['groupsize']) * self.metadata['convertparam']['step']                     + self.metadata['convertparam']['start']
+        outerindex = (int(numeric_substring) // self.metadata['groupsize']) * self.metadata['convertparam']['step'] +\
+                    self.metadata['convertparam']['start']
         df_single[self.metadata['outersweepchannel']] = outerindex
 
     
@@ -670,4 +817,3 @@ class ProcessandPlot():
     
     def waterfallPlotVertical(pivottable, start = 0, step = 1, num = 2, vert_offset = 0, hor_offset = 0,                              xscale = 1, yscale = 1, legendscale = 1, legendunit = '',                              xlabel = '', ylabel = '', title = '', savefig = False):
         return IVProcessandPlot.waterfallPlotHorizontal(pivottable.T, start, step, num, vert_offset, hor_offset,                                       xscale, yscale, legendscale, legendunit,                                       xlabel, ylabel, title, savefig)
-
