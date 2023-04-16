@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[148]:
+# In[00]:
 """
 Python module for reading, processing and plotting Levylab tdms files
 """
@@ -43,10 +43,15 @@ from sklearn.cluster import KMeans
 """
 
 
-# In[159]:
+# In[01]:
 
 
 class Scan2D():
+    """
+    Scan2D class, suitable for processing 1D sweep and 2D sweep data
+    1D sweep example: R vs T, R vs B, a single IV curve, conductance vs time...
+    2D sweep examples: IV vs B, IV vs T, G vs B vs Vsg, R vs B vs T...
+    """
     def __init__(self, folder = '03-Sweep B IV',\
                  metadata = dict(scantype = 'IV', groupsize = 1, monodirection = 'monotonic',\
                                  convertfilename = False, convertparam = dict(start = 0, step = 1),\
@@ -54,8 +59,6 @@ class Scan2D():
                                  outersweepchannel = 'Magnet', innersweepchannel = 'AO1',\
                                  source = 'AO1', sourceamp = 0.001, Vplus = 'AI4', Vminus = 'AI3', Iminus = 'AI2')):
         """
-        initiate a 2D sweep or 1D sweep class
-
         self.folder = exprimental folder the tdms files are located
         self.metadata['scantype'] = 'IV' or 'Conductance'
         self.metadata['groupsize'] = how many curves taken at the same condition to be averaged
@@ -100,13 +103,17 @@ class Scan2D():
 #         self.metadata['Iminus'] = Iminus
         
         self.tdmsfile = None
+        # initiate data
         self.outerindexlist = []
         self.monodfconcatenated = pd.DataFrame({})
+        # Scan2D.monodfconcatenated is the Pandas dataframe that contains all data we care about
+        # all subsequent data processing is based on this dataframe
+
         self.pivottable = pd.DataFrame({})
         self.pivottabledX = pd.DataFrame({})
         self.pivottabledY = pd.DataFrame({})
         self.pivottabledXdY = pd.DataFrame({})
-        # initiate data
+        # these pivot tables are used to store the interpolated data for intensity plots
         
         self.__maskinitialized = False
         self.__positivemask = None
@@ -228,6 +235,7 @@ class Scan2D():
         group_counter = 0
         # record in total how many groups have we copied
         
+        print("Concatenating Tdms Files")
         with TdmsWriter(filepath) as concatenated_file:
             # create a new tdms file specified by filepath, to dump all the data
             for filename in tqdm(self.filelist):
@@ -282,6 +290,7 @@ class Scan2D():
         index_count = len(groups) // self.metadata['groupsize']
         # index_count = how many curves are there after averaging by groupsize
         
+        print("Reading from TdmsFile to Pandas Dataframe")
         for i in tqdm(range(index_count)):
             groups_with_same_index = groups[self.metadata['groupsize'] * i: self.metadata['groupsize'] * (i + 1)]
             # groups_with_same_index = these data groups are taken at the same condition, and they need to be averaged
@@ -297,6 +306,8 @@ class Scan2D():
         
         self.monodfconcatenated = mono_df_concatenated.set_index(self.metadata['outersweepchannel'])
         # set index of mono_df_concatenated to be outer sweep channel
+        # Scan2D.monodfconcatenated is the Pandas dataframe that contains all data we care about
+        # all subsequent data processing is based on this dataframe
         self.outerindexlist = self.monodfconcatenated.index.unique()
         # extract the values of outer sweep channel
         
@@ -448,7 +459,7 @@ class Scan2D():
         
         if self.metadata['convertfilename']:
             self.convertFilenameToIndex(group.name, df)
-            # convert group index to outer sweep channel value if outer sweep channel is not recorded
+        # convert group index to outer sweep channel value if outer sweep channel is not recorded
         
         self.__calcV2TV4T(df)
         # calculate V2T and V4T, add them to dataframe columns
@@ -473,22 +484,33 @@ class Scan2D():
 
     
     def regroup(self, by, num_of_index = 1, criterion = 'value'):
+        """
+        set the index of Scan2D.monodfconcatenated to another column
+        this function creates a "label" column that classifies the data, and then set index to "label"
+        """
         self.metadata['regroup_by'] = by
+        # record our action in Scan2D.metadata
         self.monodfconcatenated.reset_index(inplace = True)
-        
+        # reset index
+
         if criterion == 'index':
+            # classify the data by their sequence
+            # suitable for the case when each curve has the same amount of datapoints
             self.monodfconcatenated['label'] = [0] * len(self.monodfconcatenated)
             group_length = len(self.monodfconcatenated) // num_of_index
-            
             for i in range(num_of_index):
-                
-                self.monodfconcatenated.loc[i * group_length : (i + 1) * group_length, 'label']=                np.mean(self.monodfconcatenated.loc[i * group_length : (i + 1) * group_length, by])
+                self.monodfconcatenated.loc[i * group_length : (i + 1) * group_length, 'label'] =\
+                    np.mean(self.monodfconcatenated.loc[i * group_length : (i + 1) * group_length, by])
         
         elif criterion == 'value':
-            print('assigning scan2D labels')
+            # classify the data by values of "by" column
+            # suitable for the case when each curve was taken with a fixed outer sweep channel value
             self.monodfconcatenated.loc[::, 'label'] = self.monodfconcatenated[by].values
         
         elif criterion == 'kmeans':
+            # classify the data with sklearn.kmeans classifier
+            # suitable for the case when outer sweep channel is fluctuating during one curve
+            # at the same time each curve does not has the same num of points
             X = self.monodfconcatenated[[by]].values
             
             kmeans = KMeans(n_clusters = num_of_index)
@@ -497,14 +519,22 @@ class Scan2D():
             
             mappingToRealValue = lambda y : np.mean(self.monodfconcatenated[self.monodfconcatenated['cluster'] == y][by])
             self.monodfconcatenated.loc[::, 'label'] = list(map(mappingToRealValue, self.monodfconcatenated['cluster'].values))
+            # the kmeans classifier will return the labeling 0, 1, 2, 3...
+            # this step is to map the kmeans labeling to actual averaged value of the channel you specify
                         
         self.monodfconcatenated.set_index('label', inplace = True)
         self.outerindexlist = self.monodfconcatenated.index.unique()
+        # set index to "label", record the unique values of the outer sweep channel
         
     
     def interpXY(self, xdata, ydata, xtarget, num_of_points):
+        """
+        given a curve with x and y data, interpolate x to xtarget
+        return a Pandas series
+        """
         ylist = np.empty(num_of_points)
         ylist.fill(np.nan)
+        # initialize target y, filled with np.nan
         
         xmin_local = xdata.min()
         xmax_local = xdata.max()
@@ -512,18 +542,35 @@ class Scan2D():
         for i, x in enumerate(xtarget):
             if x < xmin_local or x > xmax_local:
                 continue
+            # if the target x is out of the range of this curve, ignore
             ylist[i] = np.interp(x, xdata, ydata)
+            # interpolation
 
         return pd.Series(ylist, index = xtarget)
+        # return Pandas series, index = xtarget and value = interpolated y
     
     
-    def createPivotTable(self, parameters = dict(x = 'AI1', y = 'V4T', num_of_points = 1000,                                                 auto_xrange = True, xmin = -1e-7, xmax = 1e-7,                                                 lowpass_filter = False, cutoff = 60, fs = 1000,                                                 remove_repeated_x = False)):
+    def createPivotTable(self, parameters = dict(x = 'AI1', y = 'V4T', num_of_points = 1000,\
+                                                 auto_xrange = True, xmin = -1e-7, xmax = 1e-7,\
+                                                 lowpass_filter = False, cutoff = 60, fs = 1000,\
+                                                 remove_repeated_x = False)):
+        """
+        from Scan2D.monodfconcatenated, create a pivot table that stores a certain channel
+        vs outer sweep channel vs inner sweep channel
+        the main purpose of this function is to clean the data for intensity plots
+        """
         x = parameters['x']
         y = parameters['y']
+        # pivottable row = outer sweep channel
+        # pivottable column = x you specify
+        # pivottable value = y you specify
+        # each pivottable row = y vs x at certain outer sweeo channel value
         num_of_points = parameters['num_of_points']
         lowpass_filter = parameters['lowpass_filter']
         cutoff = parameters['cutoff']
+        # cutoff freq of low pass filter, usually 60Hz
         fs = parameters['fs']
+        # for low pass filtering, usually fs = output rate of lockin
         remove_repeated_x = parameters['remove_repeated_x']
         auto_xrange = parameters['auto_xrange']
         xmin = parameters['xmin']
@@ -532,21 +579,27 @@ class Scan2D():
         self.metadata['pivottablecolumn'] = x
         self.metadata['pivottablerow'] = self.metadata['outersweepchannel'] if 'regroup_by' not in self.metadata else self.metadata['regroup_by']
         self.metadata['pivottablevalue'] = y
+        # record the row, column and value channels of the pivottable to Scan2D.metadata
         
         if auto_xrange:
             xmin = min(self.monodfconcatenated[x])
             xmax = max(self.monodfconcatenated[x])
         xtarget = np.linspace(xmin, xmax, num_of_points)
+        # specify the x target to map the curves onto
         
         series_list = []
-        
+        # initialize a list to store Pandas series, each series will represent an interpolated curve
+
+        print("Building Pivot Table")
         for outerindex in tqdm(self.outerindexlist):
+            # iterate each curve in Scan2D.monodfconcatenated
             xdata = self.monodfconcatenated.loc[outerindex, x]
             ydata = self.monodfconcatenated.loc[outerindex, y]
-            
+            # extract x and y data from Pandas series
             if remove_repeated_x:
-                xdata, ydata = IVProcessandPlot.removeRepeatedPoints(xdata, ydata)
-            
+                xdata, ydata = ProcessandPlot.removeRepeatedPoints(xdata, ydata)
+            # this step is to remove the non-monotonic part of xdata,
+            # especially to deal with the case when current suddenly drops near a superconducting transition
             if lowpass_filter:
                 nyq = 0.5 * fs
                 normal_cutoff = cutoff / nyq
@@ -554,15 +607,23 @@ class Scan2D():
                 xdata = signal.filtfilt(b, a, xdata)
                 ydata = signal.filtfilt(b, a, ydata)
                 self.metadata['pivottablelowpassfiltered'] = True
+                # low pass filtering to filter out the >60Hz signal
 
             series_list.append(self.interpXY(xdata, ydata, xtarget, num_of_points))
         
         self.pivottable = pd.concat(series_list, keys = self.outerindexlist).unstack(level = -1)
+        # concatenate all series and unstack, to get the pivottable
         
    
     def calcSeriesDVDI(self, series, diff_step = 10, inter = 1):
+        """
+        differentiate Pandas series
+        diff_step = the step size for differentiation
+        inter = output rate, for example if inter = 1, output every point, if inter = 2, output one per two points
+        """
         length = len(series)
         step = diff_step if diff_step >= 1 else diff_step * length
+        # if diff step < 1, we instead use diff_step as a percentage
         
         index_list = []
         dvdi_list = []
@@ -579,11 +640,19 @@ class Scan2D():
             
             dvdi = np.polyfit(series.index[start: end], series.values[start: end], 1)[0]
             dvdi_list.append(dvdi)
+            # get the slope of linearfit
         
         return pd.Series(dvdi_list, index = index_list)
+        # return Pandas series, index = original index, value = d value / d index
     
     
-    def differentiateTable(self, parameters = dict(columnstep = 10, columninter = 1,                                                   rowstep = 6, rowinter = 1)):
+    def differentiateTable(self, parameters = dict(columnstep = 10, columninter = 1, rowstep = 6, rowinter = 1)):
+        """
+        differentiate a pivottable, useful for getting differential resistance or transconductance
+        columnstep = differentiation stepsize along column direction
+        rowstep = differentiation stepsize along row direction
+        if we don't want to differentiate along a certain direction, set its step = 0
+        """
         columnstep = parameters['columnstep']
         columninter = parameters['columninter']
         rowstep = parameters['rowstep']
@@ -592,90 +661,132 @@ class Scan2D():
         if self.pivottable.empty:
             print('create pivot table first')
             return
+        # if the pivottable has not been created, need to create a pivottable before differentiation
         
         self.metadata['dzdx_columnstep'] = columnstep
         self.metadata['dzdy_rowstep'] = rowstep
+        # record the differentiation parameters in Scan2D.metadata
         
         dx_series_list = []
         dy_series_list = []
         dydx_series_list = []
         
+        print("Differentiating Pivot Table against Column")
         if columnstep > 0:
+            # differentiate against column
+            # iterate rows, differentiate each row, and concatenate then unstack
             for index in tqdm(self.outerindexlist):
-                dx_series_list.append(self.calcSeriesDVDI(self.pivottable.loc[index],                                      columnstep, columninter))
-            self.pivottabledX = pd.concat(dx_series_list, keys = self.outerindexlist).                              unstack(level = -1)
+                dx_series_list.append(self.calcSeriesDVDI(self.pivottable.loc[index], columnstep, columninter))
+            self.pivottabledX = pd.concat(dx_series_list, keys = self.outerindexlist).unstack(level = -1)
         else:
             self.pivottabledX = pd.DataFrame({})
             self.pivottabledXdY = pd.DataFrame({})
         
+        print("Differentiating Pivot Table against Row")
         if rowstep > 0:
+            # differentiate against row
+            # iterate columns, differentiate each column, and concatenate then unstack then transpose
             for column in tqdm(self.pivottable.columns):
-                dy_series_list.append(self.calcSeriesDVDI(self.pivottable[column],                                                          rowstep, rowinter))
-            self.pivottabledY = pd.concat(dy_series_list, keys = self.pivottable.columns).                              unstack(level = -1).T
+                dy_series_list.append(self.calcSeriesDVDI(self.pivottable[column], rowstep, rowinter))
+            self.pivottabledY = pd.concat(dy_series_list, keys = self.pivottable.columns).unstack(level = -1).T
         else:
             self.pivottabledY = pd.DataFrame({})
             self.pivottabledXdY = pd.DataFrame({})
         
+        print("Differentiating Pivot Table against Both Row and Column")
         if columnstep > 0 and rowstep > 0:
+            # differentiate against row after differentiating against column
             for column in tqdm(self.pivottabledX.columns):
-                dydx_series_list.append(self.calcSeriesDVDI(self.pivottabledX[column],                                        rowstep, rowinter))
-            self.pivottabledXdY = pd.concat(dydx_series_list, keys = self.pivottabledX.columns).                                unstack(level = -1).T                           
+                dydx_series_list.append(self.calcSeriesDVDI(self.pivottabledX[column], rowstep, rowinter))
+            self.pivottabledXdY = pd.concat(dydx_series_list, keys = self.pivottabledX.columns).unstack(level = -1).T                           
 
 
-# In[160]:
+# In[02]:
 
 
 class Scan3D():
+    """
+    Scan3D class, suitable for processing 3D sweep data
+    It processes a 3D sweep with a list of 2D sweep, indexed by the outmost sweep channel
+    #D sweep example: IV vs B vs T, IV vs B vs Vbg, R vs B vs T vs Vbg...
+    """
     def __init__(self, folder = '03-Sweep T B IV', 
                  metadata = dict(scantype = 'IV', groupsize = 1, monodirection = 'monoup',\
                  convertfilename = False, convertparam = dict(start = 0, step = 1),\
                  dataofinterest = ['Magnet', 'Temperature', 'AO1', 'AI2', 'AI3', 'AI4'],\
                  outmostsweepchannel = 'Temperature', outersweepchannel = 'Magnet', innersweepchannel = 'AO1',\
                  source = 'AO1', sourceamp = 0.001, Vplus = 'AI4', Vminus = 'AI3', Iminus = 'AI2')):
-        
+        """
+        initialization. metadata of Scan3D is the metadata of Scan2D + outmost sweep channel info
+        """
         self.folder = folder     
         self.metadata = metadata
         
         self.scanall = Scan2D(folder, metadata)
+        # Scan3D.scanall is a Scan2D object, a Pandas dataframe that stores ALL data from this experiment
         self.outmostindexlist = []
+        # Scan3D.outmostindexlist stores the values that the outmost sweep channel can take
         self.scan2Dlist = []
+        # Scan3D.scan2Dlist stores the Scan2D objects in a list, that are divided by their outmost sweep channel value
         
     def openTdms(self):
+        """
+        open the tdms object in Scan3D.scanall, for reading data
+        """
         self.scanall.openTdms()
         
     def tdmsToAveragedMonoDfConcatenated(self):
+        """
+        read ALL data to Scan3D.scanall.monodfconcatenated
+        """
         self.scanall.tdmsToAveragedMonoDfConcatenated()
 #       self.scanall.saveToPickles('ALL DATA')
         
     def splitDataByOutmostIndex(self, num_of_outmostindex = 1, criterion = 'value'):
+        """
+        split the data stored in Scan3D.scanall into many parts, according to the outmost sweep channel value
+        """
         self.scanall.regroup(by = self.metadata['outmostsweepchannel'], 
                              num_of_index = num_of_outmostindex, 
                              criterion = criterion)
         self.outmostindexlist = self.scanall.outerindexlist
-        
-        print('assigning scan2D')
         self.scan2Dlist = []
         
-        for outmostindex in self.outmostindexlist:
+        print('Dividing Scanall into a list of Scan2D Objects')
+        for outmostindex in tqdm(self.outmostindexlist):
             scan2D = Scan2D(self.folder, self.metadata.copy())
             scan2D.monodfconcatenated = self.scanall.monodfconcatenated.loc[outmostindex].copy()
+            # create new Scan2D object, and assign part of scanall data to the Scan2D object
             
             scan2D.regroup(by = self.metadata['outersweepchannel'], 
                                               criterion = 'value')
             self.scan2Dlist.append(scan2D)
+            # regoup the Scan2D object by outer sweep channel values,
+            # and then append the Scan2D object to Scan3D.scan2Dlist
             
         zipped = zip(self.outmostindexlist, self.scan2Dlist)
         zipped = sorted(zipped)
         self.outmostindexlist, self.scan2Dlist = zip(*zipped)
+        # sort Scan3D.scan2Dlist by the outmost sweep channel value
         
         
     def saveToPickles(self):
+        """
+        save the Scan3D object, by saving Scan3D.scanall first, 
+        then saving each of the Scan2D object in the Scan3D.scan2Dlist
+        """
         self.scanall.saveToPickles(appendix = '-alldata')
+        # save Scan3D.scanall, appendix is "-alldata"
         
         for i, scan2D in enumerate(self.scan2Dlist):
             scan2D.saveToPickles(appendix = '-' + self.metadata['outmostsweepchannel'] + '-' + str(self.outmostindexlist[i]))
-            
+            # save each Scan2D in scan2Dlist, appendix is "-channel-value" for example "-T-0.050"
+
     def loadFromPickles(self):
+        """
+        load the Scan3D object from previously saved .pkl files, by loading Scan3D.scanall first,
+        then loading the Scan2D objects one by one, and append them to the Scan3D.scan2Dlist
+        """
         self.scan2Dlist = []
         self.scanall.loadFromPickles(jupyteroutputfolder = 'Jupyter Output-alldata')
         self.metadata = self.scanall.metadata
@@ -689,20 +800,33 @@ class Scan3D():
             scan2D.loadFromPickles(folder)
             self.scan2Dlist.append(scan2D)
             
-    def createPivotTable(self, parameters = dict(x = 'AI1', y = 'V4T', num_of_points = 1000,                         lowpass_filter = False, cutoff = 60, fs = 1000,                         remove_repeated_x = False)):
+    def createPivotTable(self, parameters = dict(x = 'AI1', y = 'V4T', num_of_points = 1000,\
+                                                 lowpass_filter = False, cutoff = 60, fs = 1000, remove_repeated_x = False)):
+        """
+        create pivot table for each Scan2D object in Scan3D.scan2Dlist
+        """
         for scan2D in self.scan2Dlist:
             scan2D.createPivotTable(parameters)
             
-    def differentiateTable(self, parameters = dict(columnstep = 10, columninter = 1,                                               rowstep = 6, rowinter = 1)):
+    def differentiateTable(self, parameters = dict(columnstep = 10, columninter = 1, rowstep = 6, rowinter = 1)):
+        """
+        differentiate pivot table for each Scan2D object in Scan3D.scan2Dlist
+        """
         for scan2D in self.scan2Dlist:
             scan2D.differentiateTable(parameters)
 
 
-# In[195]:
+# In[03]:
 
 
 class ProcessandPlot():
+    """
+    a class for some additional data processing and also data visualization
+    """
     def removeRepeatedPoints(xdata, ydata):
+        """
+        remove repeated points when creating pivot table in Scan2D object
+        """
         n = len(xdata)
         mid = n // 2
         
@@ -729,21 +853,35 @@ class ProcessandPlot():
         return xdata[mask], ydata[mask]
     
     def extractIcVoltageThreshold(VvsI, threshold):
+        """
+        extract critical current from voltage threshold
+        """
         Icplus = np.abs(VvsI - threshold).idxmin()
         Icminus = np.abs(VvsI + threshold).idxmin()
         return Icplus, Icminus
     
     def extractIcResistanceThreshold(dVdIvsI, threshold):
+        """
+        extract critical current from differential resistance threshold
+        """
         Icplus = np.abs(dVdIvsI[dVdIvsI.index > 0] - threshold).idxmin()
         Icminus = np.abs(dVdIvsI[dVdIvsI.index < 0] - threshold).idxmin()
         return Icplus, Icminus
     
     def extractIcCoherencePeak(dVdIvsI):
+        """
+        extract critical current from coherence peak (maximum dVdI)
+        """
         Icplus = dVdIvsI[dVdIvsI.index > 0].idxmax()
         Icminus = dVdIvsI[dVdIvsI.index < 0].idxmax()
         return Icplus, Icminus
     
     def extractIc(VI_table, dVdI_table, algorithm, threshold):
+        """
+        extract critical current from Scan2D.pivottable, with the algorithm you specify
+        extract both the critical current of the positive current and negative current
+        return two Pandas series, index = outer sweep channel, value = positive Ic or negative Ic
+        """
         Icplus_list = []
         Icminus_list = []
         
@@ -752,21 +890,28 @@ class ProcessandPlot():
             dVdIvsI = dVdI_table.loc[index]
             
             if algorithm == 'CoherencePeak':
-                Icplus, Icminus = IVProcessandPlot.extractIcCoherencePeak(dVdIvsI)
+                Icplus, Icminus = ProcessandPlot.extractIcCoherencePeak(dVdIvsI)
                 
             elif algorithm == 'ResistanceThreshold':
-                Icplus, Icminus = IVProcessandPlot.extractIcResistanceThreshold(dVdIvsI, threshold)
+                Icplus, Icminus = ProcessandPlot.extractIcResistanceThreshold(dVdIvsI, threshold)
             
             elif algorithm == 'VoltageThreshold':
-                Icplus, Icminus = IVProcessandPlot.extractIcVoltageThreshold(dVdIvsI, threshold)
+                Icplus, Icminus = ProcessandPlot.extractIcVoltageThreshold(dVdIvsI, threshold)
             
             Icplus_list.append(Icplus)
             Icminus_list.append(Icminus)
             
-        return pd.Series(Icplus_list, index = VI_table.index),               pd.Series(Icminus_list, index = VI_table.index)
+        return pd.Series(Icplus_list, index = VI_table.index), pd.Series(Icminus_list, index = VI_table.index)
    
     
-    def intensityPlot(pivottable, zmin, zmax, xlabel = '', ylabel = '', zlabel = '', title = 'intensity',                          xscale = 1, yscale = 1, zscale = 1, width = 850, height = 700,                          colorscale = 'plasma', savefig = False):
+    def intensityPlot(pivottable, zmin, zmax, xlabel = '', ylabel = '', zlabel = '', title = 'intensity',\
+                      xscale = 1, yscale = 1, zscale = 1, width = 850, height = 700,\
+                      colorscale = 'plasma', savefig = False):
+        """
+        intensity plot of Scan2D.pivottable
+        Note:
+        need to manually specify the colorbar range zmin and zmax
+        """
         fig_intensity = go.Figure(data = go.Heatmap(z = pivottable.iloc[::,1:-1].to_numpy() * zscale,
                                               x = np.array(pivottable.columns[1:-1]) * xscale,
                                               y = pivottable.iloc[::].index * yscale,
@@ -774,6 +919,7 @@ class ProcessandPlot():
                                               zmax = zmax,
                                               zmin = zmin,
                                               colorscale = colorscale))
+        
         fig_intensity.update_layout(
             autosize = False,
             width = width,
@@ -796,14 +942,27 @@ class ProcessandPlot():
             
         return fig_intensity
     
-    def waterfallPlotHorizontal(pivottable, start = 0, step = 1, num = 2, vert_offset = 0, hor_offset = 0,                                xscale = 1, yscale = 1, legendscale = 1, legendunit = '',                                xlabel = '', ylabel = '', title = 'waterfall', savefig = False):
+    def waterfallPlotHorizontal(pivottable, start = 0, step = 1, num = 2, vert_offset = 0, hor_offset = 0,\
+                                xscale = 1, yscale = 1, legendscale = 1, legendunit = '',\
+                                xlabel = '', ylabel = '', title = 'waterfall', savefig = False):
+        """
+        plot the horizontal linecuts of Scan2D.pivottable
+        start = starting index
+        step = index step
+        num = how many curves in total
+        vert_offset and hor_offset = offset in vertical or horizontal direction between nearest curves
+        """
         fig, ax = plt.subplots()
         
         for i in range(0, step * num, step):
             row = pivottable.iloc[start + i]
             index = pivottable.index[start + i]
             legend = index * legendscale
-            ax.plot((row.index + hor_offset * i / step) * xscale, (row.values + vert_offset * i / step) * yscale,                     lw = .8, alpha = .7, color = [max(0, 1 - 2 * i / step / num), 0, max(2 * i / step / num - 1, 0)],                     label = np.format_float_positional(legend, precision = 5,                                                        unique = False, fractional = False,                                                        trim='k') + ' ' + legendunit)
+            ax.plot((row.index + hor_offset * i / step) * xscale, (row.values + vert_offset * i / step) * yscale,\
+                     lw = .8, alpha = .7, color = [max(0, 1 - 2 * i / step / num), 0, max(2 * i / step / num - 1, 0)],\
+                     label = np.format_float_positional(legend, precision = 5,\
+                                                        unique = False, fractional = False,\
+                                                        trim='k') + ' ' + legendunit)
         
         ax.legend(fontsize = 8)
         ax.set_xlabel(xlabel)
@@ -815,5 +974,13 @@ class ProcessandPlot():
         
         return fig, ax
     
-    def waterfallPlotVertical(pivottable, start = 0, step = 1, num = 2, vert_offset = 0, hor_offset = 0,                              xscale = 1, yscale = 1, legendscale = 1, legendunit = '',                              xlabel = '', ylabel = '', title = '', savefig = False):
-        return IVProcessandPlot.waterfallPlotHorizontal(pivottable.T, start, step, num, vert_offset, hor_offset,                                       xscale, yscale, legendscale, legendunit,                                       xlabel, ylabel, title, savefig)
+    def waterfallPlotVertical(pivottable, start = 0, step = 1, num = 2, vert_offset = 0, hor_offset = 0,\
+                              xscale = 1, yscale = 1, legendscale = 1, legendunit = '',\
+                              xlabel = '', ylabel = '', title = '', savefig = False):
+        """
+        plot the vertical linecuts of Scan2D.pivottable
+        by plotting the horizontal linecuts of Scan2D.pivottable.T
+        """
+        return ProcessandPlot.waterfallPlotHorizontal(pivottable.T, start, step, num, vert_offset, hor_offset,\
+                                                      xscale, yscale, legendscale, legendunit,\
+                                                      xlabel, ylabel, title, savefig)
