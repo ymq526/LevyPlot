@@ -6,9 +6,8 @@
 Python module for reading, processing and plotting Levylab tdms files
 """
 
-"""
-Prerequisite Packages:
 
+# Prerequisite Packages:
 import os
 import shutil
 import re
@@ -22,7 +21,7 @@ import plotly.graph_objects as go
 pio.renderers.default = "notebook"
 import matplotlib
 import matplotlib.pyplot as plt
-%matplotlib inline
+# %matplotlib inline
 font = {'family' : 'Arial',
         'size'   : 14}
 matplotlib.rc('font', **font)
@@ -40,8 +39,6 @@ from tqdm import tqdm
 from datetime import datetime
 import pickle
 from sklearn.cluster import KMeans
-"""
-
 
 # In[01]:
 
