@@ -668,8 +668,8 @@ class Scan2D():
         dy_series_list = []
         dydx_series_list = []
         
-        print("Differentiating Pivot Table against Column")
         if columnstep > 0:
+            print("Differentiating Pivot Table against Column")
             # differentiate against column
             # iterate rows, differentiate each row, and concatenate then unstack
             for index in tqdm(self.outerindexlist):
@@ -679,8 +679,8 @@ class Scan2D():
             self.pivottabledX = pd.DataFrame({})
             self.pivottabledXdY = pd.DataFrame({})
         
-        print("Differentiating Pivot Table against Row")
         if rowstep > 0:
+            print("Differentiating Pivot Table against Row")
             # differentiate against row
             # iterate columns, differentiate each column, and concatenate then unstack then transpose
             for column in tqdm(self.pivottable.columns):
@@ -689,9 +689,9 @@ class Scan2D():
         else:
             self.pivottabledY = pd.DataFrame({})
             self.pivottabledXdY = pd.DataFrame({})
-        
-        print("Differentiating Pivot Table against Both Row and Column")
+    
         if columnstep > 0 and rowstep > 0:
+            print("Differentiating Pivot Table against Both Row and Column")
             # differentiate against row after differentiating against column
             for column in tqdm(self.pivottabledX.columns):
                 dydx_series_list.append(self.calcSeriesDVDI(self.pivottabledX[column], rowstep, rowinter))
