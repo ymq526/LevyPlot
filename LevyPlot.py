@@ -38,7 +38,9 @@ from nptdms import TdmsWriter, RootObject, GroupObject, ChannelObject, TdmsFile
 from tqdm import tqdm
 from datetime import datetime
 import pickle
+import time
 from sklearn.cluster import KMeans
+
 
 # In[01]:
 
@@ -69,7 +71,6 @@ class Scan2D():
         for conductance measurements, use 'X1' ... 'X8' as channel names
         for IV measurements, use 'AI1' ... 'AI8' as channel names
         """
-
         self.folder = './' + folder
         # set the folder which contains the tdms files of one experiment run
         self.filelist = [self.folder + '/' + f for f in os.listdir(self.folder) if f.endswith('.tdms')]
@@ -118,6 +119,16 @@ class Scan2D():
         self.__increasemask = None
         self.__decreasemask = None
         # initiate mask
+
+
+    def append(self, experiment: Scan2D):
+        """
+        append another scan2D object to the current scan2D object
+        by appending the monodfconcatenated and outerindexlist
+        """
+        self.outerindexlist = self.outerindexlist.append(experiment.outerindexlist)
+        self.monodfconncatenated = self.monodfconcatenated.append(experiment.monodfconcatenated)
+        print('Scan2D append finished. Recreate pivottable if needed')
         
        
     def saveToPickles(self, appendix = ''):
@@ -233,6 +244,7 @@ class Scan2D():
         # record in total how many groups have we copied
         
         print("Concatenating Tdms Files")
+        time.sleep(0.5)
         with TdmsWriter(filepath) as concatenated_file:
             # create a new tdms file specified by filepath, to dump all the data
             for filename in tqdm(self.filelist):
@@ -288,6 +300,7 @@ class Scan2D():
         # index_count = how many curves are there after averaging by groupsize
         
         print("Reading from TdmsFile to Pandas Dataframe")
+        time.sleep(0.5)
         for i in tqdm(range(index_count)):
             groups_with_same_index = groups[self.metadata['groupsize'] * i: self.metadata['groupsize'] * (i + 1)]
             # groups_with_same_index = these data groups are taken at the same condition, and they need to be averaged
@@ -520,7 +533,10 @@ class Scan2D():
             # this step is to map the kmeans labeling to actual averaged value of the channel you specify
                         
         self.monodfconcatenated.set_index('label', inplace = True)
-        self.outerindexlist = self.monodfconcatenated.index.unique()
+        if criterion == 'index' or criterion == 'kmeans':
+            self.outerindexlist = self.monodfconcatenated.index.unique()[0:num_of_index]
+        elif criterion == 'value':
+            self.outerindexlist = self.monodfconcatenated.index.unique()
         # set index to "label", record the unique values of the outer sweep channel
         
     
@@ -588,6 +604,7 @@ class Scan2D():
         # initialize a list to store Pandas series, each series will represent an interpolated curve
 
         print("Building Pivot Table")
+        time.sleep(0.5)
         for outerindex in tqdm(self.outerindexlist):
             # iterate each curve in Scan2D.monodfconcatenated
             xdata = self.monodfconcatenated.loc[outerindex, x]
@@ -670,6 +687,7 @@ class Scan2D():
         
         if columnstep > 0:
             print("Differentiating Pivot Table against Column")
+            time.sleep(0.5)
             # differentiate against column
             # iterate rows, differentiate each row, and concatenate then unstack
             for index in tqdm(self.outerindexlist):
@@ -678,9 +696,10 @@ class Scan2D():
         else:
             self.pivottabledX = pd.DataFrame({})
             self.pivottabledXdY = pd.DataFrame({})
-        
+
         if rowstep > 0:
             print("Differentiating Pivot Table against Row")
+            time.sleep(0.5)
             # differentiate against row
             # iterate columns, differentiate each column, and concatenate then unstack then transpose
             for column in tqdm(self.pivottable.columns):
@@ -692,6 +711,7 @@ class Scan2D():
     
         if columnstep > 0 and rowstep > 0:
             print("Differentiating Pivot Table against Both Row and Column")
+            time.sleep(0.5)
             # differentiate against row after differentiating against column
             for column in tqdm(self.pivottabledX.columns):
                 dydx_series_list.append(self.calcSeriesDVDI(self.pivottabledX[column], rowstep, rowinter))
@@ -739,6 +759,16 @@ class Scan3D():
         self.scanall.tdmsToAveragedMonoDfConcatenated()
 #       self.scanall.saveToPickles('ALL DATA')
         
+
+    def sortByOutmostIndex(self):
+        """
+        sort Scan3D.scan2Dlist by the outmost sweep channel index
+        """
+        zipped = zip(self.outmostindexlist, self.scan2Dlist)
+        zipped = sorted(zipped)
+        self.outmostindexlist, self.scan2Dlist = zip(*zipped)
+
+
     def splitDataByOutmostIndex(self, num_of_outmostindex = 1, criterion = 'value'):
         """
         split the data stored in Scan3D.scanall into many parts, according to the outmost sweep channel value
@@ -750,22 +780,29 @@ class Scan3D():
         self.scan2Dlist = []
         
         print('Dividing Scanall into a list of Scan2D Objects')
+        time.sleep(0.5)
         for outmostindex in tqdm(self.outmostindexlist):
             scan2D = Scan2D(self.folder, self.metadata.copy())
             scan2D.monodfconcatenated = self.scanall.monodfconcatenated.loc[outmostindex].copy()
             # create new Scan2D object, and assign part of scanall data to the Scan2D object
             
-            scan2D.regroup(by = self.metadata['outersweepchannel'], 
-                                              criterion = 'value')
+            scan2D.regroup(by = self.metadata['outersweepchannel'], criterion = 'value')
             self.scan2Dlist.append(scan2D)
             # regoup the Scan2D object by outer sweep channel values,
             # and then append the Scan2D object to Scan3D.scan2Dlist
-            
-        zipped = zip(self.outmostindexlist, self.scan2Dlist)
-        zipped = sorted(zipped)
-        self.outmostindexlist, self.scan2Dlist = zip(*zipped)
-        # sort Scan3D.scan2Dlist by the outmost sweep channel value
-        
+        self.sortByOutmostIndex()
+
+
+    def append(self, experiment: Scan3D):
+        """
+        append another scan3D object to the current scan3D object
+        by appending scanall, outmostindexlist and scan2Dlist
+        """
+        self.scanall.append(experiment.scanall)
+        self.outmostindexlist = self.outmostindexlist + experiment.outmostindexlist
+        self.scan2Dlist = self.scan2Dlist + experiment.scan2Dlist
+        self.sortByOutmostIndex()
+
         
     def saveToPickles(self):
         """
