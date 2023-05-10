@@ -121,7 +121,7 @@ class Scan2D():
         # initiate mask
 
 
-    def append(self, experiment: Scan2D):
+    def append(self, experiment):
         """
         append another scan2D object to the current scan2D object
         by appending the monodfconcatenated and outerindexlist
@@ -627,6 +627,8 @@ class Scan2D():
         
         self.pivottable = pd.concat(series_list, keys = self.outerindexlist).unstack(level = -1)
         # concatenate all series and unstack, to get the pivottable
+        self.pivottable.sort_index(axis = 0, inplace = True, ascending=True)
+        # sort the pivottable by index
         
    
     def calcSeriesDVDI(self, series, diff_step = 10, inter = 1):
@@ -793,7 +795,7 @@ class Scan3D():
         self.sortByOutmostIndex()
 
 
-    def append(self, experiment: Scan3D):
+    def append(self, experiment):
         """
         append another scan3D object to the current scan3D object
         by appending scanall, outmostindexlist and scan2Dlist
