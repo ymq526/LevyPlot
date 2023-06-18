@@ -493,7 +493,7 @@ class Scan2D():
         df_single[self.metadata['outersweepchannel']] = outerindex
 
     
-    def regroup(self, by, num_of_index = 1, criterion = 'value'):
+    def regroup(self, by, num_of_index = 1, criterion = 'value', thresholds = []):
         """
         set the index of Scan2D.monodfconcatenated to another column
         this function creates a "label" column that classifies the data, and then set index to "label"
@@ -507,6 +507,7 @@ class Scan2D():
             # classify the data by their sequence
             # suitable for the case when each curve has the same amount of datapoints
             self.monodfconcatenated['label'] = [0] * len(self.monodfconcatenated)
+            # initialize label column
             group_length = len(self.monodfconcatenated) // num_of_index
             for i in range(num_of_index):
                 self.monodfconcatenated.loc[i * group_length : (i + 1) * group_length, 'label'] =\
@@ -527,15 +528,35 @@ class Scan2D():
             kmeans.fit(X)
             self.monodfconcatenated['cluster'] = kmeans.labels_
             
-            mappingToRealValue = lambda y : np.mean(self.monodfconcatenated[self.monodfconcatenated['cluster'] == y][by])
+            mapping = {}
+            for y in self.monodfconcatenated['cluster'].unique():
+                mapping[y] = np.mean(self.monodfconcatenated[self.monodfconcatenated['cluster'] == y][by])
+            
+            mappingToRealValue = lambda y: mapping[y]
             self.monodfconcatenated.loc[::, 'label'] = list(map(mappingToRealValue, self.monodfconcatenated['cluster'].values))
             # the kmeans classifier will return the labeling 0, 1, 2, 3...
             # this step is to map the kmeans labeling to actual averaged value of the channel you specify
+
+        elif criterion == 'threshold':
+            # classify the data with manually specified thresholds of the outmostsweep channel
+            # can only be used to split scan3D.scanall
+            self.monodfconcatenated['label'] = [0] * len(self.monodfconcatenated)
+            # initialize label column and cluster column
+            if len(thresholds) != num_of_index:
+                print('conflit between set num_of_index and len of thresholds')
+            
+            for i, threshold in enumerate(thresholds):
+                lowerlimit = threshold[0]
+                upperlimit = threshold[1]
+                index_within_threshold = self.monodfconcatenated[(self.monodfconcatenated[by] > lowerlimit)\
+                                                                  & (self.monodfconcatenated[by] < upperlimit)].index
+                averaged_index = np.mean(self.monodfconcatenated.loc[index_within_threshold, by])
+                self.monodfconcatenated.loc[index_within_threshold, 'label'] = averaged_index
                         
         self.monodfconcatenated.set_index('label', inplace = True)
         if criterion == 'index' or criterion == 'kmeans':
             self.outerindexlist = self.monodfconcatenated.index.unique()[0:num_of_index]
-        elif criterion == 'value':
+        elif criterion == 'value' or criterion == 'threshold':
             self.outerindexlist = self.monodfconcatenated.index.unique()
         # set index to "label", record the unique values of the outer sweep channel
         
@@ -771,13 +792,14 @@ class Scan3D():
         self.outmostindexlist, self.scan2Dlist = zip(*zipped)
 
 
-    def splitDataByOutmostIndex(self, num_of_outmostindex = 1, criterion = 'value'):
+    def splitDataByOutmostIndex(self, num_of_outmostindex = 1, criterion = 'value', thresholds = []):
         """
         split the data stored in Scan3D.scanall into many parts, according to the outmost sweep channel value
         """
         self.scanall.regroup(by = self.metadata['outmostsweepchannel'], 
                              num_of_index = num_of_outmostindex, 
-                             criterion = criterion)
+                             criterion = criterion,
+                             thresholds = thresholds)
         self.outmostindexlist = self.scanall.outerindexlist
         self.scan2Dlist = []
         
