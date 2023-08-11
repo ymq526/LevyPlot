@@ -713,9 +713,9 @@ class Scan2D():
             time.sleep(0.5)
             # differentiate against column
             # iterate rows, differentiate each row, and concatenate then unstack
-            for index in tqdm(self.outerindexlist):
+            for index in tqdm(self.pivottable.index):
                 dx_series_list.append(self.calcSeriesDVDI(self.pivottable.loc[index], columnstep, columninter))
-            self.pivottabledX = pd.concat(dx_series_list, keys = self.outerindexlist).unstack(level = -1)
+            self.pivottabledX = pd.concat(dx_series_list, keys = self.pivottable.index).unstack(level = -1)
         else:
             self.pivottabledX = pd.DataFrame({})
             self.pivottabledXdY = pd.DataFrame({})
