@@ -628,8 +628,10 @@ class Scan2D():
         time.sleep(0.5)
         for outerindex in tqdm(self.outerindexlist):
             # iterate each curve in Scan2D.monodfconcatenated
-            xdata = self.monodfconcatenated.loc[outerindex, x]
-            ydata = self.monodfconcatenated.loc[outerindex, y]
+            xydata = self.monodfconcatenated.loc[outerindex, [x, y]].iloc[10:-10:]
+            xydata.sort_values(by = x, inplace = True)
+            xdata = xydata.loc[::, x]
+            ydata = xydata.loc[::, y]
             # extract x and y data from Pandas series
             if remove_repeated_x:
                 xdata, ydata = ProcessandPlot.removeRepeatedPoints(xdata, ydata)
