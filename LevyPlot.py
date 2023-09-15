@@ -405,7 +405,7 @@ class Scan2D():
         
         if self.metadata['monodirection'] == 'monoup':
             df_monoup = df_single[self.__increasemask & self.__negativemask]
-            return df_monoup.append(df_single[self.__increasemask & self.__positivemask])
+            return df_monoup.iloc[1::].append(df_single[self.__increasemask & self.__positivemask])
         # 'monoup' means increasing portion
         # 'monoup' = <0,increase + >0,increase
      
@@ -628,10 +628,12 @@ class Scan2D():
         time.sleep(0.5)
         for outerindex in tqdm(self.outerindexlist):
             # iterate each curve in Scan2D.monodfconcatenated
-            xydata = self.monodfconcatenated.loc[outerindex, [x, y]].iloc[10:-10:]
-            xydata.sort_values(by = x, inplace = True)
-            xdata = xydata.loc[::, x]
-            ydata = xydata.loc[::, y]
+            # xydata = self.monodfconcatenated.loc[outerindex, [x, y]].iloc[1:-1:]
+            # xydata.sort_values(by = x, inplace = True)
+            # xdata = xydata.loc[::, x]
+            # ydata = xydata.loc[::, y]
+            xdata = self.monodfconcatenated.loc[outerindex, x].iloc[1:-1:]
+            ydata = self.monodfconcatenated.loc[outerindex, y].iloc[1:-1:]
             # extract x and y data from Pandas series
             if remove_repeated_x:
                 xdata, ydata = ProcessandPlot.removeRepeatedPoints(xdata, ydata)
