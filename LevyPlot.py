@@ -916,19 +916,41 @@ class ProcessandPlot():
     
     def extractIcVoltageThreshold(VvsI, threshold):
         """
-        extract critical current from voltage threshold
+        return the current where voltage first exceeds a threshold
         """
-        Icplus = np.abs(VvsI - threshold).idxmin()
-        Icminus = np.abs(VvsI + threshold).idxmin()
-        return Icplus, Icminus
+        # Icplus = np.abs(VvsI - threshold).idxmin()
+        # Icminus = np.abs(VvsI + threshold).idxmin()
+        VvsI_positive = VvsI[VvsI.index > 0]
+        VvsI_negative = VvsI[VvsI.index < 0].iloc[::-1]
+        Ic_p = Ic_n = 0
+        for I, V in VvsI_positive.items():
+            if V > threshold:
+                Ic_p = I
+                break
+        for I, V in VvsI_negative.items():
+            if V < -threshold:
+                Ic_n = I
+                break
+        return Ic_p, Ic_n
     
     def extractIcResistanceThreshold(dVdIvsI, threshold):
         """
-        extract critical current from differential resistance threshold
+        return the current where dV/dI first exceeds a threshold
         """
-        Icplus = np.abs(dVdIvsI[dVdIvsI.index > 0] - threshold).idxmin()
-        Icminus = np.abs(dVdIvsI[dVdIvsI.index < 0] - threshold).idxmin()
-        return Icplus, Icminus
+        # Icplus = np.abs(dVdIvsI[dVdIvsI.index > 0] - threshold).idxmin()
+        # Icminus = np.abs(dVdIvsI[dVdIvsI.index < 0] - threshold).idxmin()
+        dVdIvsI_positive = dVdIvsI[dVdIvsI.index > 0]
+        dVdIvsI_negative = dVdIvsI[dVdIvsI.index < 0].iloc[::-1]
+        Ic_p = Ic_n = 0
+        for I, dVdI in dVdIvsI_positive.items():
+            if dVdI > threshold:
+                Ic_p = I
+                break
+        for I, dVdI in dVdIvsI_negative.items():
+            if dVdI > threshold:
+                Ic_n = I
+                break
+        return Ic_p, Ic_n
     
     def extractIcCoherencePeak(dVdIvsI):
         """
@@ -958,7 +980,7 @@ class ProcessandPlot():
                 Icplus, Icminus = ProcessandPlot.extractIcResistanceThreshold(dVdIvsI, threshold)
             
             elif algorithm == 'VoltageThreshold':
-                Icplus, Icminus = ProcessandPlot.extractIcVoltageThreshold(dVdIvsI, threshold)
+                Icplus, Icminus = ProcessandPlot.extractIcVoltageThreshold(VvsI, threshold)
             
             Icplus_list.append(Icplus)
             Icminus_list.append(Icminus)
