@@ -121,13 +121,13 @@ class Scan2D():
         # initiate mask
 
 
-    def append(self, experiment):
+    def append(self, experiment2):
         """
         append another scan2D object to the current scan2D object
         by appending the monodfconcatenated and outerindexlist
         """
-        self.outerindexlist = self.outerindexlist.append(experiment.outerindexlist)
-        self.monodfconncatenated = self.monodfconcatenated.append(experiment.monodfconcatenated)
+        self.outerindexlist = self.outerindexlist.append(experiment2.outerindexlist.copy())
+        self.monodfconcatenated = self.monodfconcatenated.append(experiment2.monodfconcatenated).copy()
         print('Scan2D append finished. Recreate pivottable if needed')
         
        
@@ -821,14 +821,14 @@ class Scan3D():
         self.sortByOutmostIndex()
 
 
-    def append(self, experiment):
+    def append(self, experiment2):
         """
         append another scan3D object to the current scan3D object
         by appending scanall, outmostindexlist and scan2Dlist
         """
-        self.scanall.append(experiment.scanall)
-        self.outmostindexlist = self.outmostindexlist + experiment.outmostindexlist
-        self.scan2Dlist = self.scan2Dlist + experiment.scan2Dlist
+        self.scanall.append(experiment2.scanall)
+        self.outmostindexlist = self.outmostindexlist + experiment2.outmostindexlist
+        self.scan2Dlist = self.scan2Dlist + experiment2.scan2Dlist
         self.sortByOutmostIndex()
 
         
