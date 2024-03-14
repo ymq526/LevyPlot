@@ -458,7 +458,7 @@ class Scan2D():
             if len(data) == num_of_points:
                 df[column] = data
             elif column == self.metadata['outersweepchannel']:
-                outerindex = data[0] + 1e-12 * random.random()
+                outerindex = data[0] + 1e-15 * random.random()
                 # this small random component is to deal with the possible recurrent outer sweep channel values
                 # for example the magnetic field does not change between two IV curves
                 # during later processing these two IV curves will have the same index, and cause problem
